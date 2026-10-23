@@ -1,14 +1,24 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowUpRight, X, Cpu, Layers, BarChart3, CheckCircle2, Workflow, ShieldCheck } from 'lucide-react';
 import { SITE_CONFIG, ShowcaseProject } from '../config/siteConfig';
+import { getProjects } from '../lib/dbService';
 import ScrollReveal from './ScrollReveal';
 
 export default function ProjectShowcase() {
+  const [projects, setProjects] = useState<ShowcaseProject[]>(SITE_CONFIG.projects);
   const [selectedCategory, setSelectedCategory] = useState<'All' | 'AI' | 'Web' | 'Automation'>('All');
   const [activeModalProject, setActiveModalProject] = useState<ShowcaseProject | null>(null);
   const [activeModalTab, setActiveModalTab] = useState<'overview' | 'architecture' | 'capabilities'>('overview');
 
-  const filteredProjects = SITE_CONFIG.projects.filter((project) => {
+  useEffect(() => {
+    getProjects(true).then((data) => {
+      if (data && data.length > 0) {
+        setProjects(data);
+      }
+    });
+  }, []);
+
+  const filteredProjects = projects.filter((project) => {
     if (selectedCategory === 'All') return true;
     return project.allCategories.includes(selectedCategory);
   });

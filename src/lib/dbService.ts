@@ -46,11 +46,13 @@ export interface AuditLog {
 export interface SiteSettings {
   id: string;
   site_name: string;
+  logo_text?: string;
   tagline: string;
   hero_heading: string;
   hero_description: string;
   contact_email: string;
   location: string;
+  footer_text?: string;
   social_links: { name: string; url: string; handle: string }[];
   maintenance_mode: boolean;
   seo_title: string;
@@ -142,18 +144,32 @@ let inMemoryAuditLogs: AuditLog[] = [
   },
 ];
 
-let inMemoryServices: ServiceItem[] = [...SITE_CONFIG.services];
-let inMemoryProjects: ShowcaseProject[] = [...SITE_CONFIG.projects];
+let inMemoryServices: ServiceItem[] = SITE_CONFIG.services.map((s, idx) => ({
+  ...s,
+  displayOrder: idx + 1,
+  published: true,
+}));
+
+let inMemoryProjects: ShowcaseProject[] = SITE_CONFIG.projects.map((p, idx) => ({
+  ...p,
+  displayOrder: idx + 1,
+  published: true,
+  isConcept: true,
+  projectUrl: '',
+}));
 
 let inMemorySettings: SiteSettings = {
   id: 'default',
   site_name: SITE_CONFIG.brand.name,
+  logo_text: 'AI SOFT STUDIO',
   tagline: SITE_CONFIG.brand.tagline,
   hero_heading: "We Build What's Next.",
   hero_description:
     'AI-powered experiences, intelligent automation, and digital products engineered to move your business forward.',
   contact_email: SITE_CONFIG.contact.email,
   location: SITE_CONFIG.contact.location,
+  footer_text:
+    'Architecting high-performance digital systems, custom AI integrations, and responsive software.',
   social_links: [...SITE_CONFIG.socials],
   maintenance_mode: false,
   seo_title: 'AI SOFT STUDIO — Futuristic Digital Experience & Software Engineering',
@@ -373,13 +389,28 @@ export async function getServices(onlyPublished: boolean = true): Promise<Servic
       const { data, error } = await query;
       if (error) throw error;
       if (data && data.length > 0) {
-        return data as ServiceItem[];
+        return data.map((d, index) => ({
+          id: d.id,
+          number: d.number,
+          title: d.title,
+          description: d.description,
+          highlights: d.highlights || [],
+          iconType: (d.icon_type || 'ai') as ServiceItem['iconType'],
+          gradient: d.gradient || 'from-violet-500/20 via-cyan-500/10 to-transparent',
+          displayOrder: d.display_order ?? index + 1,
+          published: d.published ?? true,
+        })) as ServiceItem[];
       }
     } catch {
       // Fallback below
     }
   }
-  return inMemoryServices;
+
+  let list = [...inMemoryServices];
+  if (onlyPublished) {
+    list = list.filter((s) => s.published !== false);
+  }
+  return list.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 }
 
 export async function saveService(
@@ -397,11 +428,13 @@ export async function saveService(
           highlights: service.highlights,
           icon_type: service.iconType,
           gradient: service.gradient,
+          display_order: service.displayOrder ?? 0,
+          published: service.published ?? true,
           updated_at: new Date().toISOString(),
         },
       ]);
       if (error) throw error;
-      await logAuditEvent('UPSERT_SERVICE', 'SERVICE', service.id, { title: service.title }, actorEmail);
+      await logAuditEvent('UPSERT_SERVICE', 'SERVICE', service.id, { title: service.title, published: service.published }, actorEmail);
       return true;
     } catch {
       return false;
@@ -414,7 +447,7 @@ export async function saveService(
   } else {
     inMemoryServices.push(service);
   }
-  await logAuditEvent('UPSERT_SERVICE', 'SERVICE', service.id, { title: service.title }, actorEmail);
+  await logAuditEvent('UPSERT_SERVICE', 'SERVICE', service.id, { title: service.title, published: service.published }, actorEmail);
   return true;
 }
 
@@ -454,12 +487,12 @@ export async function getProjects(onlyPublished: boolean = true): Promise<Showca
       const { data, error } = await query;
       if (error) throw error;
       if (data && data.length > 0) {
-        return data.map((d) => ({
+        return data.map((d, index) => ({
           id: d.id,
           title: d.title,
           subtitle: d.subtitle,
-          category: d.category,
-          allCategories: d.all_categories || [d.category],
+          category: d.category as ShowcaseProject['category'],
+          allCategories: (d.all_categories || [d.category]) as ShowcaseProject['allCategories'],
           image: d.image_url,
           conceptSummary: d.concept_summary,
           challenge: d.challenge,
@@ -467,13 +500,22 @@ export async function getProjects(onlyPublished: boolean = true): Promise<Showca
           technologies: d.technologies || [],
           metrics: d.metrics || [],
           accentColor: d.accent_color || '#8B5CF6',
+          isConcept: d.is_concept ?? true,
+          projectUrl: d.project_url || '',
+          displayOrder: d.display_order ?? index + 1,
+          published: d.published ?? true,
         })) as ShowcaseProject[];
       }
     } catch {
       // Fallback below
     }
   }
-  return inMemoryProjects;
+
+  let list = [...inMemoryProjects];
+  if (onlyPublished) {
+    list = list.filter((p) => p.published !== false);
+  }
+  return list.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
 }
 
 export async function saveProject(
@@ -496,12 +538,15 @@ export async function saveProject(
           technologies: project.technologies,
           metrics: project.metrics,
           accent_color: project.accentColor,
-          is_concept: true,
+          is_concept: project.isConcept ?? true,
+          project_url: project.projectUrl || null,
+          display_order: project.displayOrder ?? 0,
+          published: project.published ?? true,
           updated_at: new Date().toISOString(),
         },
       ]);
       if (error) throw error;
-      await logAuditEvent('UPSERT_PROJECT', 'PROJECT', project.id, { title: project.title }, actorEmail);
+      await logAuditEvent('UPSERT_PROJECT', 'PROJECT', project.id, { title: project.title, published: project.published }, actorEmail);
       return true;
     } catch {
       return false;
@@ -514,7 +559,7 @@ export async function saveProject(
   } else {
     inMemoryProjects.push(project);
   }
-  await logAuditEvent('UPSERT_PROJECT', 'PROJECT', project.id, { title: project.title }, actorEmail);
+  await logAuditEvent('UPSERT_PROJECT', 'PROJECT', project.id, { title: project.title, published: project.published }, actorEmail);
   return true;
 }
 

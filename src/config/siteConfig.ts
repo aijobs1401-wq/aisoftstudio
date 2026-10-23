@@ -11,6 +11,8 @@ export interface ServiceItem {
   highlights: string[];
   gradient: string;
   iconType: 'ai' | 'web' | 'mobile' | 'automation' | 'cloud' | 'design';
+  displayOrder?: number;
+  published?: boolean;
 }
 
 export interface ShowcaseProject {
@@ -26,6 +28,10 @@ export interface ShowcaseProject {
   technologies: string[];
   metrics: { label: string; value: string }[];
   accentColor: string;
+  isConcept?: boolean;
+  projectUrl?: string;
+  displayOrder?: number;
+  published?: boolean;
 }
 
 export interface ProcessStep {

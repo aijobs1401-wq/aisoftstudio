@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowUpRight, CheckCircle2, Cpu, Globe, Smartphone, Zap, Cloud, Palette } from 'lucide-react';
 import { SITE_CONFIG, ServiceItem } from '../config/siteConfig';
+import { getServices } from '../lib/dbService';
 import ScrollReveal from './ScrollReveal';
 
 interface ServicesSectionProps {
@@ -199,6 +200,16 @@ function ServiceCard({ service, index, onSelect }: ServiceCardProps) {
 }
 
 export default function ServicesSection({ onSelectService }: ServicesSectionProps) {
+  const [services, setServices] = useState<ServiceItem[]>(SITE_CONFIG.services);
+
+  useEffect(() => {
+    getServices(true).then((data) => {
+      if (data && data.length > 0) {
+        setServices(data);
+      }
+    });
+  }, []);
+
   return (
     <section id="services" className="relative py-24 sm:py-32 bg-[#050711]">
       {/* Background Lighting */}
@@ -222,9 +233,9 @@ export default function ServicesSection({ onSelectService }: ServicesSectionProp
           </div>
         </ScrollReveal>
 
-        {/* 6 Premium Interactive Service Panels */}
+        {/* Dynamic Published Service Panels */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {SITE_CONFIG.services.map((service, index) => (
+          {services.map((service, index) => (
             <ServiceCard
               key={service.id}
               service={service}

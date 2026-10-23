@@ -123,11 +123,13 @@ CREATE INDEX IF NOT EXISTS idx_projects_published ON public.projects(published);
 CREATE TABLE IF NOT EXISTS public.site_settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
   site_name TEXT NOT NULL DEFAULT 'AI SOFT STUDIO',
+  logo_text TEXT NOT NULL DEFAULT 'AI SOFT STUDIO',
   tagline TEXT NOT NULL DEFAULT 'Futuristic Digital Experience & Software Engineering',
   hero_heading TEXT NOT NULL DEFAULT 'We Build What''s Next.',
   hero_description TEXT NOT NULL DEFAULT 'AI-powered experiences, intelligent automation, and digital products engineered to move your business forward.',
   contact_email TEXT NOT NULL DEFAULT 'hello@aisoftstudio.io',
   location TEXT NOT NULL DEFAULT 'Distributed Global Studio · Remote-First',
+  footer_text TEXT NOT NULL DEFAULT 'Architecting high-performance digital systems, custom AI integrations, and responsive software.',
   social_links JSONB NOT NULL DEFAULT '[
     {"name": "GitHub", "url": "https://github.com", "handle": "aisoftstudio"},
     {"name": "X / Twitter", "url": "https://twitter.com", "handle": "@aisoftstudio"},

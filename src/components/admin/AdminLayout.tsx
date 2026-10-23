@@ -60,7 +60,7 @@ export default function AdminLayout({ children, activePath, title = 'Admin Conso
     { name: 'Users & Roles', href: '/admin/users', icon: ShieldAlert },
     { name: 'Notifications', href: '/admin/notifications', icon: Bell, badge: unreadCount },
     { name: 'Website Settings', href: '/admin/settings', icon: Settings },
-    { name: 'Security & Audit', href: '/admin/audit-logs', icon: ShieldAlert },
+    { name: 'Audit Logs', href: '/admin/audit-logs', icon: ShieldAlert },
   ];
 
   const handleLogout = async () => {

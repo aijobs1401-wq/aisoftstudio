@@ -7,9 +7,16 @@ import { SITE_CONFIG } from '../config/siteConfig';
 interface HeroSectionProps {
   onStartProject: () => void;
   onExploreWork: () => void;
+  heading?: string;
+  description?: string;
 }
 
-export default function HeroSection({ onStartProject, onExploreWork }: HeroSectionProps) {
+export default function HeroSection({
+  onStartProject,
+  onExploreWork,
+  heading,
+  description,
+}: HeroSectionProps) {
   const [cursorGlow, setCursorGlow] = useState({ x: -500, y: -500 });
 
   useEffect(() => {
@@ -59,18 +66,24 @@ export default function HeroSection({ onStartProject, onExploreWork }: HeroSecti
             {/* Main Headline */}
             <ScrollReveal delayMs={200}>
               <h1 className="text-4xl sm:text-6xl xl:text-7xl font-extrabold tracking-tight text-white leading-[1.08] mb-6 text-balance">
-                We Build{' '}
-                <span className="bg-gradient-to-r from-white via-cyan-200 to-[#8B5CF6] bg-clip-text text-transparent">
-                  What’s Next.
-                </span>
+                {heading ? (
+                  <span>{heading}</span>
+                ) : (
+                  <>
+                    We Build{' '}
+                    <span className="bg-gradient-to-r from-white via-cyan-200 to-[#8B5CF6] bg-clip-text text-transparent">
+                      What’s Next.
+                    </span>
+                  </>
+                )}
               </h1>
             </ScrollReveal>
 
             {/* Supporting Subtitle */}
             <ScrollReveal delayMs={300}>
               <p className="text-base sm:text-xl text-[#9CA3AF] max-w-xl leading-relaxed mb-9">
-                AI-powered experiences, intelligent automation, and digital products engineered to move
-                your business forward.
+                {description ||
+                  'AI-powered experiences, intelligent automation, and digital products engineered to move your business forward.'}
               </p>
             </ScrollReveal>
 
