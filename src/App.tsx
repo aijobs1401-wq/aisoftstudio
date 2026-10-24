@@ -37,6 +37,12 @@ import AdminUsers from './pages/admin/AdminUsers';
 import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminAuditLogs from './pages/admin/AdminAuditLogs';
+import AdminChatbot from './pages/admin/AdminChatbot';
+import AdminKnowledgeBase from './pages/admin/AdminKnowledgeBase';
+import AdminInbox from './pages/admin/AdminInbox';
+import AdminCampaigns from './pages/admin/AdminCampaigns';
+import AdminContacts from './pages/admin/AdminContacts';
+import AdminBilling from './pages/admin/AdminBilling';
 
 function PublicLandingPage() {
   const [selectedService, setSelectedService] = useState<string | undefined>(undefined);
@@ -173,6 +179,12 @@ export default function App() {
 
         {/* Admin Console Protected Routes */}
         <Route path="/admin" component={AdminOverview} />
+        <Route path="/admin/chatbot" component={AdminChatbot} />
+        <Route path="/admin/knowledge-base" component={AdminKnowledgeBase} />
+        <Route path="/admin/inbox" component={AdminInbox} />
+        <Route path="/admin/campaigns" component={AdminCampaigns} />
+        <Route path="/admin/contacts" component={AdminContacts} />
+        <Route path="/admin/billing" component={AdminBilling} />
         <Route path="/admin/leads" component={AdminLeads} />
         <Route path="/admin/services" component={AdminServices} />
         <Route path="/admin/projects" component={AdminProjects} />

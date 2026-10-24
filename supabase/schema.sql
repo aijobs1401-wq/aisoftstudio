@@ -323,16 +323,417 @@ CREATE POLICY "Admins can view audit logs"
   USING (public.is_admin());
 
 -- ==============================================================================
--- 12. Seed Default Settings
+-- 13. Multi-Tenant WhatsApp Automation Tables
 -- ==============================================================================
-INSERT INTO public.site_settings (id)
-VALUES ('default')
-ON CONFLICT (id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS public.tenants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'suspended', 'trial')) DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Add tenant_id to profiles if not exists
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_profiles_tenant ON public.profiles(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.whatsapp_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  phone_number_id TEXT NOT NULL,
+  waba_id TEXT,
+  access_token TEXT NOT NULL,
+  phone_number TEXT,
+  name TEXT,
+  status TEXT NOT NULL CHECK (status IN ('connected', 'disconnected', 'error', 'pending')) DEFAULT 'pending',
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, phone_number_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_accounts_tenant ON public.whatsapp_accounts(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.automation_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  trigger_keyword TEXT NOT NULL,
+  response_template TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant ON public.automation_rules(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  whatsapp_account_id UUID REFERENCES public.whatsapp_accounts(id) ON DELETE CASCADE,
+  message_id TEXT,
+  sender TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'received',
+  payload JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_tenant ON public.messages(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON public.messages(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.webhook_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL,
+  payload JSONB,
+  response_status INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Enable RLS on new tables
+ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.whatsapp_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.automation_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.webhook_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for Tenants & WhatsApp Automation
+CREATE POLICY "Users can read own tenant"
+  ON public.tenants FOR SELECT
+  TO authenticated
+  USING (id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can read own whatsapp accounts"
+  ON public.whatsapp_accounts FOR SELECT
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can read own automation rules"
+  ON public.automation_rules FOR SELECT
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can read own messages"
+  ON public.messages FOR SELECT
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
 
 -- ==============================================================================
--- 13. Instructions for Creating the First Administrator
+-- 14. Phase 10: AI Chatbot Settings, Knowledge Base & Conversation Metadata
 -- ==============================================================================
--- Step 1: Create a user via Supabase Dashboard -> Authentication -> Users -> "Invite user" or "Add user".
+CREATE TABLE IF NOT EXISTS public.chatbot_settings (
+  tenant_id UUID PRIMARY KEY REFERENCES public.tenants(id) ON DELETE CASCADE,
+  bot_name TEXT NOT NULL DEFAULT 'AI Assistant',
+  welcome_message TEXT NOT NULL DEFAULT 'Hello! Welcome to our automated support. How can I help you today?',
+  business_name TEXT,
+  business_description TEXT,
+  supported_languages TEXT[] DEFAULT ARRAY['English'],
+  working_hours JSONB DEFAULT '{"enabled": false, "start": "09:00", "end": "18:00", "days": [1,2,3,4,5]}'::jsonb,
+  instructions TEXT,
+  handoff_rules TEXT,
+  is_enabled BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.knowledge_base (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  category TEXT NOT NULL CHECK (category IN ('faq', 'product', 'policy', 'general')) DEFAULT 'faq',
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_base_tenant ON public.knowledge_base(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.conversation_metadata (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('unread', 'active', 'resolved', 'escalated')) DEFAULT 'unread',
+  assigned_to TEXT,
+  takeover_mode BOOLEAN NOT NULL DEFAULT false,
+  internal_notes TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, sender)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_metadata_tenant ON public.conversation_metadata(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_metadata_sender ON public.conversation_metadata(sender);
+
+-- Enable RLS on new tables
+ALTER TABLE public.chatbot_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.knowledge_base ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversation_metadata ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for Chatbot Settings, Knowledge Base, & Conversation Metadata
+CREATE POLICY "Tenant users can manage own chatbot settings"
+  ON public.chatbot_settings FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can manage own knowledge base"
+  ON public.knowledge_base FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can manage own conversation metadata"
+  ON public.conversation_metadata FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+-- ==============================================================================
+-- 16. Phase 11: WhatsApp Campaign & Broadcast Management Tables
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  tags TEXT[] DEFAULT '{}'::text[],
+  consent_status TEXT NOT NULL CHECK (consent_status IN ('opted_in', 'opted_out', 'pending')) DEFAULT 'pending',
+  consent_source TEXT,
+  consent_timestamp TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, phone)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contacts_tenant ON public.contacts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_phone ON public.contacts(phone);
+CREATE INDEX IF NOT EXISTS idx_contacts_consent ON public.contacts(consent_status);
+
+CREATE TABLE IF NOT EXISTS public.contact_consent_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  contact_id UUID REFERENCES public.contacts(id) ON DELETE CASCADE,
+  phone TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('opt_in', 'opt_out', 'imported')),
+  source TEXT,
+  evidence TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_consent_events_tenant ON public.contact_consent_events(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  whatsapp_account_id UUID REFERENCES public.whatsapp_accounts(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  purpose TEXT,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'scheduled', 'processing', 'completed', 'failed', 'cancelled')) DEFAULT 'draft',
+  target_filter JSONB DEFAULT '{}'::jsonb,
+  template_name TEXT,
+  template_language TEXT DEFAULT 'en',
+  template_variables JSONB DEFAULT '{}'::jsonb,
+  message_body TEXT,
+  scheduled_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  total_recipients INTEGER DEFAULT 0,
+  sent_count INTEGER DEFAULT 0,
+  delivered_count INTEGER DEFAULT 0,
+  read_count INTEGER DEFAULT 0,
+  failed_count INTEGER DEFAULT 0,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON public.campaigns(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_status ON public.campaigns(status);
+
+CREATE TABLE IF NOT EXISTS public.campaign_recipients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  contact_id UUID REFERENCES public.contacts(id) ON DELETE SET NULL,
+  phone TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'read', 'failed', 'skipped')) DEFAULT 'pending',
+  provider_message_id TEXT,
+  error_message TEXT,
+  sent_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(campaign_id, phone)
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_recipients_campaign ON public.campaign_recipients(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_recipients_status ON public.campaign_recipients(status);
+
+CREATE TABLE IF NOT EXISTS public.whatsapp_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  template_name TEXT NOT NULL,
+  language TEXT NOT NULL DEFAULT 'en',
+  category TEXT NOT NULL CHECK (category IN ('MARKETING', 'UTILITY', 'AUTHENTICATION')) DEFAULT 'MARKETING',
+  status TEXT NOT NULL CHECK (status IN ('APPROVED', 'PENDING', 'REJECTED')) DEFAULT 'APPROVED',
+  components JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(tenant_id, template_name, language)
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_templates_tenant ON public.whatsapp_templates(tenant_id);
+
+-- Enable RLS
+ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contact_consent_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaign_recipients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.whatsapp_templates ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies
+CREATE POLICY "Tenant users can manage own contacts"
+  ON public.contacts FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can manage own consent events"
+  ON public.contact_consent_events FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can manage own campaigns"
+  ON public.campaigns FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can manage own campaign recipients"
+  ON public.campaign_recipients FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can manage own whatsapp templates"
+  ON public.whatsapp_templates FOR ALL
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+-- ==============================================================================
+-- 18. Phase 12: Subscription, Billing & Plan Management Tables
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.subscription_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  monthly_price NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+  yearly_price NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  max_whatsapp_accounts INTEGER NOT NULL DEFAULT 1,
+  max_monthly_messages INTEGER NOT NULL DEFAULT 1000,
+  max_contacts INTEGER NOT NULL DEFAULT 500,
+  max_campaigns_per_month INTEGER NOT NULL DEFAULT 5,
+  max_automation_rules INTEGER NOT NULL DEFAULT 10,
+  trial_days INTEGER NOT NULL DEFAULT 14,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  features JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.client_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE UNIQUE,
+  plan_id UUID REFERENCES public.subscription_plans(id) ON DELETE SET NULL,
+  status TEXT NOT NULL CHECK (status IN ('trialing', 'active', 'past_due', 'canceled', 'expired')) DEFAULT 'trialing',
+  billing_cycle TEXT NOT NULL CHECK (billing_cycle IN ('monthly', 'yearly')) DEFAULT 'monthly',
+  trial_end TIMESTAMPTZ,
+  current_period_start TIMESTAMPTZ,
+  current_period_end TIMESTAMPTZ,
+  cancel_at_period_end BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_subscriptions_tenant ON public.client_subscriptions(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.payment_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  plan_id UUID REFERENCES public.subscription_plans(id) ON DELETE SET NULL,
+  gateway TEXT NOT NULL DEFAULT 'razorpay',
+  order_id TEXT NOT NULL UNIQUE,
+  payment_id TEXT UNIQUE,
+  signature TEXT,
+  amount NUMERIC(10,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  status TEXT NOT NULL CHECK (status IN ('created', 'authorized', 'captured', 'failed', 'refunded')) DEFAULT 'created',
+  error_message TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_tenant ON public.payment_transactions(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  transaction_id UUID REFERENCES public.payment_transactions(id) ON DELETE SET NULL,
+  invoice_number TEXT NOT NULL UNIQUE,
+  amount NUMERIC(10,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  status TEXT NOT NULL CHECK (status IN ('paid', 'pending', 'void', 'refunded')) DEFAULT 'pending',
+  invoice_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  pdf_url TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_tenant ON public.invoices(tenant_id);
+
+CREATE TABLE IF NOT EXISTS public.billing_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  details JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE public.subscription_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.billing_audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies
+CREATE POLICY "Anyone can view active subscription plans"
+  ON public.subscription_plans FOR SELECT
+  TO anon, authenticated
+  USING (is_active = true OR public.is_admin());
+
+CREATE POLICY "Admins can manage subscription plans"
+  ON public.subscription_plans FOR ALL
+  TO authenticated
+  USING (public.is_admin());
+
+CREATE POLICY "Tenant users can view own subscription"
+  ON public.client_subscriptions FOR SELECT
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can view own transactions"
+  ON public.payment_transactions FOR SELECT
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Tenant users can view own invoices"
+  ON public.invoices FOR SELECT
+  TO authenticated
+  USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()) OR public.is_admin());
+
+CREATE POLICY "Admins can view billing audit logs"
+  ON public.billing_audit_logs FOR SELECT
+  TO authenticated
+  USING (public.is_admin());
+
+-- ==============================================================================
+-- 19. Instructions for Creating the First Administrator
+-- ==============================================================================
+-- Step 1: Create a user via Supabase Dashboard -> Authentication -> Users -> "Invite user".
 -- Step 2: Run the following SQL query to elevate that user to 'admin':
 --
 -- UPDATE public.profiles

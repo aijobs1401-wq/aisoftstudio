@@ -19,6 +19,12 @@ import {
   Info,
   Copy,
   Check,
+  Bot,
+  BookOpen,
+  MessageSquare,
+  Send,
+  Users2,
+  CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getNotifications, AdminNotification, markNotificationAsRead } from '../../lib/dbService';
@@ -54,6 +60,12 @@ export default function AdminLayout({ children, activePath, title = 'Admin Conso
 
   const navItems = [
     { name: 'Overview', href: '/admin', icon: LayoutDashboard },
+    { name: 'AI Chatbot', href: '/admin/chatbot', icon: Bot },
+    { name: 'Knowledge Base', href: '/admin/knowledge-base', icon: BookOpen },
+    { name: 'Inbox & Takeover', href: '/admin/inbox', icon: MessageSquare },
+    { name: 'Campaigns & Broadcasts', href: '/admin/campaigns', icon: Send },
+    { name: 'Contacts & Audience', href: '/admin/contacts', icon: Users2 },
+    { name: 'Subscription & Billing', href: '/admin/billing', icon: CreditCard },
     { name: 'Leads', href: '/admin/leads', icon: Users },
     { name: 'Services', href: '/admin/services', icon: Briefcase },
     { name: 'Projects', href: '/admin/projects', icon: Layers },
